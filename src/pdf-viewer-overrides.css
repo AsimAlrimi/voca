@@ -1,0 +1,41 @@
+/* react-pdf-viewer — override using index.css theme variables */
+
+.rpv-core__viewer          { height: 100% !important; }
+
+/* Layout */
+.rpv-toolbar               { background: var(--color-surface) !important; border-bottom: 1px solid var(--color-border) !important; }
+.rpv-core__sidebar         { background: var(--color-surface) !important; border-right: 1px solid var(--color-border) !important; }
+.rpv-core__inner-pages     { background: var(--color-background) !important; }
+.rpv-core__page-layer      { background: var(--color-surface-raised) !important; }
+
+/* Buttons & icons */
+.rpv-toolbar__item button,
+.rpv-core__minimal-button  { color: var(--color-text-secondary) !important; }
+.rpv-toolbar__item button:hover,
+.rpv-core__minimal-button:hover { background: var(--color-surface-raised) !important; color: var(--color-text-primary) !important; }
+
+/* Inputs */
+.rpv-core__textbox {
+  background: var(--color-surface-raised) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+  border-radius: 4px;
+}
+
+/* Menus */
+.rpv-core__menu            { background: var(--color-surface) !important; border: 1px solid var(--color-border) !important; box-shadow: 0 8px 24px rgba(0,0,0,.5) !important; }
+.rpv-core__menu-item:hover { background: var(--color-surface-raised) !important; }
+.rpv-core__menu-item-label { color: var(--color-text-primary) !important; }
+
+/* Tooltips */
+.rpv-core__tooltip-body    { background: var(--color-surface-raised) !important; border: 1px solid var(--color-border) !important; color: var(--color-text-primary) !important; }
+
+/* Search highlights */
+.rpv-search__highlight         { background: rgba(251,191,36,.3) !important; border-radius: 2px; }
+.rpv-search__highlight--current{ background: rgba(251,191,36,.7) !important; }
+
+/* Scrollbar */
+.rpv-core__inner-pages::-webkit-scrollbar       { width: 6px; }
+.rpv-core__inner-pages::-webkit-scrollbar-track { background: var(--color-background); }
+.rpv-core__inner-pages::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+.rpv-core__inner-pages::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }

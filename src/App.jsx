@@ -3,7 +3,7 @@ import AppRouter from "./router/AppRouter";
 
 function App() {
   return (
-    <div className="min-h-screen  text-zinc-100">
+    <div className="min-h-screen">
       <Navbar />
 
       <main className="max-w-5xl mx-auto p-6">
