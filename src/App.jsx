@@ -6,7 +6,7 @@ function App() {
     <div className="min-h-screen">
       <Navbar />
 
-      <main className="max-w-5xl mx-auto p-6">
+      <main className="max-w-5xl mx-auto p-6 md:pl-52">
         <AppRouter />
       </main>
     </div>

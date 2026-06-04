@@ -64,19 +64,19 @@ const handleDrop = (e) => {
       {/* Header */}
       <div className="flex items-end justify-between mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-[var(--color-text-primary)] m-0">
+          <h1 className="text-[28px] font-bold tracking-tight text-text-primary m-0">
             Library
           </h1>
-          <p className="text-[var(--color-text-secondary)] text-sm mt-1">
+          <p className="text-text-secondary text-sm mt-1">
             {books.length} book{books.length !== 1 ? "s" : ""}
           </p>
         </div>
  
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="px-4 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-dim)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-surface-raised)] hover:border-[var(--color-text-muted)] transition-all cursor-pointer"
+          className="px-4 py-2 rounded-lg border border-border bg-accent-dim text-text-primary text-sm font-medium hover:bg-surface-raised hover:border-text-muted transition-all cursor-pointer"
         >
-          + Add PDF
+          Add PDF
         </button>
         <input
           ref={fileInputRef}
@@ -94,15 +94,14 @@ const handleDrop = (e) => {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`flex flex-col items-center justify-center gap-3 min-h-[180px] rounded-xl border border-dashed cursor-pointer transition-all ${
+          className={`flex flex-col items-center justify-center gap-3 min-h-45 rounded-xl border border-dashed cursor-pointer transition-all ${
             dragOver
-              ? "border-[var(--color-text-muted)] bg-[var(--color-surface-raised)]"
-              : "border-[var(--color-border)] hover:border-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+              ? "border-text-muted bg-surface-raised"
+              : "border-border hover:border-text-muted hover:bg-surface"
           }`}
         >
-          <span className="text-3xl">📚</span>
-          <p className="text-[var(--color-text-secondary)] text-sm m-0">
-            Drag & drop a PDF, or click <strong className="text-[var(--color-text-primary)]">+ Add PDF</strong>
+          <p className="text-text-secondary text-sm m-0">
+            Drag & drop a PDF, or click <strong className="text-text-primary">+ Add PDF</strong>
           </p>
         </div>
       )}
@@ -118,23 +117,7 @@ const handleDrop = (e) => {
               onOpen={() => book.url && setOpenFile(book)}
             />
           ))}
- 
-          {/* Add card */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`rounded-xl border border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${
-              dragOver
-                ? "border-[var(--color-text-muted)] bg-[var(--color-surface-raised)]"
-                : "border-[var(--color-border)] hover:border-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
-            }`}
-            style={{ aspectRatio: "2/3" }}
-          >
-            <span className="text-xl text-[var(--color-text-muted)]">+</span>
-            <span className="text-[11px] text-[var(--color-text-muted)]">Add PDF</span>
-          </div>
+
         </div>
       )}
     </div>
@@ -176,20 +159,15 @@ function BookCard({ book, gradient, onOpen }) {
             }`}
             style={{ background: "rgba(0,0,0,0.5)" }}
           >
-            <span className="text-white text-xs font-semibold px-3 py-1.5 rounded-md border border-white/30 bg-white/15 backdrop-blur-sm">
-              Open
-            </span>
+
           </div>
         )}
       </div>
  
       {/* Info */}
-      <div className="px-2 py-2.5 bg-[var(--color-surface)]">
-        <p className="text-[var(--color-text-primary)] text-xs font-semibold truncate m-0">
+      <div className="px-2 py-2.5 bg-black">
+        <p className="text-text-primary text-xs font-semibold truncate m-0">
           {book.title}
-        </p>
-        <p className="text-[var(--color-text-secondary)] text-[11px] truncate mt-0.5 m-0">
-          {book.author}
         </p>
       </div>
     </div>
