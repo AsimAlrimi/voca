@@ -1,14 +1,22 @@
+import { useLocation } from "react-router-dom";
 import Navbar from "./components/layout/Navbar";
 import AppRouter from "./router/AppRouter";
 
 function App() {
-  return (
-    <div className="min-h-screen">
-      <Navbar />
+  const { pathname } = useLocation();
+  const isReader = pathname.startsWith("/read/");
 
-      <main className="max-w-5xl mx-auto p-6 md:pl-52">
-        <AppRouter />
-      </main>
+  // The reader is full-screen: no navbar, no page padding.
+  if (isReader) return <AppRouter />;
+
+  return (
+    <div className="min-h-dvh">
+      <Navbar />
+      <div className="md:pl-52">
+        <main className="app-main mx-auto max-w-5xl px-4 sm:px-6 md:px-10">
+          <AppRouter />
+        </main>
+      </div>
     </div>
   );
 }

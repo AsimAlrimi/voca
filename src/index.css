@@ -5,16 +5,38 @@
   --color-background: #0a0a0a;
   --color-surface: #111111;
   --color-surface-raised: #1a1a1a;
+  --color-surface-hover: #202020;
   --color-border: #222222;
+  --color-border-strong: #333333;
 
   /* Text */
   --color-text-primary: #f0f0f0;
-  --color-text-secondary: #888888;
-  --color-text-muted: #444444;
+  --color-text-secondary: #9a9a9a;
+  --color-text-muted: #5c5c5c;
 
-  /* Accent — pick one and commit */
+  /* Accent */
   --color-accent: #e8e8e8;
   --color-accent-dim: #2a2a2a;
+
+  /* Status */
+  --color-success: #2bb58a;
+  --color-danger: #e5534b;
+  --color-warning: #e0a83a;
+  --color-focus: #7aa7ff;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-slide-up: slide-up 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 }
 
 @layer base {
@@ -24,24 +46,184 @@
 
   html {
     color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-text-primary);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  ::selection {
-    background-color: var(--color-accent-dim);
-    color: var(--color-text-primary);
+  button, [role="button"] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
   }
 
-  /* Subtle scrollbar to match the theme */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: var(--color-background); }
-  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+  /* Visible keyboard focus everywhere; no ring for mouse/touch. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background-color: rgba(122, 167, 255, 0.35);
+    color: inherit;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 1ms !important;
+      transition-duration: 1ms !important;
+    }
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 0.625rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    transition: background-color 150ms, border-color 150ms, color 150ms, opacity 150ms;
+    user-select: none;
+  }
+  .btn:disabled {
+    opacity: 0.4;
+  }
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-background);
+  }
+  .btn-primary:not(:disabled):hover {
+    background: #ffffff;
+  }
+  .btn-secondary {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+  }
+  .btn-secondary:not(:disabled):hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+  .btn-ghost:not(:disabled):hover {
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
+  }
+  .btn-danger {
+    background: var(--color-danger);
+    color: #fff;
+  }
+  .btn-danger:not(:disabled):hover {
+    background: #f06a62;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    color: var(--color-text-secondary);
+    transition: background-color 150ms, color 150ms;
+  }
+  .icon-btn:not(:disabled):hover {
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
+  }
+  .icon-btn:disabled {
+    opacity: 0.35;
+  }
+
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.875rem;
+  }
+
+  .input {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.625rem;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    /* 16px prevents iOS from zooming into focused inputs */
+    font-size: 16px;
+    outline: none;
+    transition: border-color 150ms;
+  }
+  @media (min-width: 768px) {
+    .input { font-size: 0.875rem; }
+  }
+  .input::placeholder {
+    color: var(--color-text-muted);
+  }
+  .input:focus {
+    border-color: var(--color-border-strong);
+  }
+  .input:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 0;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.375rem;
+    padding: 0.125rem 0.4rem;
+    font-size: 0.6875rem;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+  }
+}
+
+/* Leaves room for the floating mobile navbar and the iOS home indicator. */
+.app-main {
+  padding-top: calc(env(safe-area-inset-top) + 1.5rem);
+  padding-bottom: max(7.5rem, calc(env(safe-area-inset-bottom) + 6.5rem));
+}
+@media (min-width: 768px) {
+  .app-main { padding-top: 2.5rem; padding-bottom: 3rem; }
+}
+
+/* Above the floating mobile navbar; bottom-right on desktop. */
+.toast-region { bottom: calc(env(safe-area-inset-bottom) + 6.5rem); }
+@media (min-width: 768px) {
+  .toast-region { bottom: 1.5rem; }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
 }
