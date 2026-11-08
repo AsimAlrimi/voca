@@ -92,6 +92,18 @@ const PATHS = {
       <path d="M7 12h10" />
     </>
   ),
+  scrollVertical: (
+    <>
+      <rect x="6" y="3" width="12" height="7" rx="1.5" />
+      <rect x="6" y="14" width="12" height="7" rx="1.5" />
+    </>
+  ),
+  scrollHorizontal: (
+    <>
+      <rect x="3" y="6" width="7" height="12" rx="1.5" />
+      <rect x="14" y="6" width="7" height="12" rx="1.5" />
+    </>
+  ),
   bookmark: <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
   bookmarks: (
     <>

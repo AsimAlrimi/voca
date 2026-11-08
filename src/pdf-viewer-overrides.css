@@ -13,6 +13,15 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Horizontal reading: swipe left/right; settle on a page when the swipe ends near one.
+   "proximity" (not "mandatory") so panning inside a zoomed-in page is never fought. */
+.rpv-core__inner-pages--horizontal {
+  scroll-snap-type: x proximity;
+}
+.rpv-core__inner-pages--horizontal .rpv-core__inner-page {
+  scroll-snap-align: start; /* matches the viewer, which aligns a page's left edge when navigating */
+}
+
 /* Room so the last page isn't hidden behind the floating mobile controls */
 @media (max-width: 767px) {
   .rpv-core__inner-pages { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }

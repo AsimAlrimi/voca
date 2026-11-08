@@ -64,6 +64,11 @@ Legend: ✅ verified in the browser · 🧪 verified by unit tests only · 📱 
 | Popover never covers the selected word (desktop); word scrolled above the sheet (mobile) | ✅ |
 | Dictionary failures handled (retry, offline message, save without definition) | ✅ |
 | **Long-press word selection on a real phone** | 📱 **not verifiable here** (see below) |
+| Vertical / horizontal scroll modes; switching keeps page and zoom; preference persists; navigation, bookmarks, progress in both modes | ✅ |
+| Horizontal mode: wheel scrolling (desktop), touch swiping with page snapping (emulated mobile) | ✅ |
+| Popover after pinch-zoom (emulated page scale 2.5): inside the visible area, next to the word, normal size, also at the edges | ✅ · real iPhone 📱 |
+| Popover follows the word while pages scroll (both modes) | ✅ |
+| Lookup: all meanings grouped by part of speech; per-meaning example/synonyms; US/UK audio; repeated lookups not refetched; API blocked → message + save without definition | ✅ |
 
 ### 4. Vocabulary
 | Requirement | Status |

@@ -21,11 +21,13 @@ Voca runs entirely in your browser, keeps your books and words on your own devic
 
 ### Reader
 - Full-screen dark reader with a compact toolbar.
+- **Vertical or horizontal reading:** scroll pages up and down, or swipe left and right through them. The choice is remembered on the device and switching keeps your page and zoom.
 - Page indicator, previous/next, and **go to page**.
 - Zoom in/out (50–300%) and **fit to width**.
 - Reopens at the page where you stopped.
 - Bookmark any page; jump to bookmarks from the bookmarks list.
-- **Select a word** (double-click on desktop, long-press on mobile) to see its definition, pronunciation, phonetic spelling and part of speech, pick the meaning that fits, add a note or example, and **save it to your vocabulary**. The sentence from the book and the page number are saved with the word.
+- **Select a word** (double-click on desktop, long-press on mobile) to see all its meanings grouped by part of speech, with phonetic spelling, US/UK audio, examples, synonyms and opposites. Pick the meaning that fits, add a note or example, and **save it to your vocabulary**. The sentence from the book and the page number are saved with the word.
+- The definition panel stays next to the selected word, also after pinch-zooming on a phone.
 - Works with words split across PDF text runs and words hyphenated across lines. Selecting several words shows a hint (Phase 1 supports single words).
 - If the dictionary can't be reached, you can still save the word and add a definition later.
 

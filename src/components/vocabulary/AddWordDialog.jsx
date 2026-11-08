@@ -51,7 +51,7 @@ function AddWordForm({ onClose, onSave }) {
         phonetic: entry?.phonetic,
         audio: entry?.audio,
         origin: entry?.origin,
-        synonyms: entry?.synonyms,
+        synonyms: !useOwn && sense?.synonyms?.length ? sense.synonyms : entry?.synonyms,
         pos: useOwn ? "" : sense?.pos,
         definition: useOwn ? ownDefinition : sense?.definition,
         example: useOwn ? "" : sense?.example,
@@ -108,7 +108,9 @@ function AddWordForm({ onClose, onSave }) {
               <span className="text-base font-semibold">{entry.word}</span>
               {entry.phonetic && <span className="text-sm text-text-secondary">{entry.phonetic}</span>}
             </div>
-            {!writeOwn && <SenseList senses={entry.senses} selectedIndex={senseIndex} onSelect={setSenseIndex} />}
+            {!writeOwn && (
+              <SenseList senses={entry.senses} meanings={entry.meanings} selectedIndex={senseIndex} onSelect={setSenseIndex} />
+            )}
             <button
               type="button"
               className="mt-2 min-h-9 text-xs font-medium text-text-secondary hover:text-text-primary"
@@ -160,7 +162,7 @@ function AddWordForm({ onClose, onSave }) {
         </p>
       )}
 
-      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="sticky -bottom-5 z-10 -mx-5 mt-5 flex flex-col-reverse gap-2 border-t border-border bg-surface px-5 pb-5 pt-3 sm:flex-row sm:justify-end">
         <button type="button" className="btn btn-secondary" onClick={onClose}>
           Cancel
         </button>

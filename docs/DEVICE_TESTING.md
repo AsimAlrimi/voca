@@ -55,6 +55,20 @@ If step 3 fails (no highlight at all), note the phone model, OS version, browser
 
 If steps 3 works but 4 fails (highlight, but no sheet), note it. That is a Voca bug in selection detection.
 
+## 2b. Scroll modes and pinch-zoom (added 2026-11-08)
+
+| # | Step | Expected | Pass? |
+| --- | --- | --- | --- |
+| 1 | In the reader, tap the two-rectangles icon in the top bar | Pages now sit side by side; same page and zoom | |
+| 2 | Swipe left / right | Moves through pages; the page number at the bottom follows | |
+| 3 | Tap the icon again | Back to vertical scrolling on the same page | |
+| 4 | Close and reopen the book | The mode you chose is kept | |
+| 5 | **Pinch-zoom in** with two fingers, then long-press a word | A small definition card appears right next to the word, normal-sized and fully on screen (not a huge or off-screen panel) | |
+| 6 | While zoomed, select a word near the right edge and one near the bottom | The card moves to the side/above so it stays on screen and doesn't cover the word | |
+| 7 | Pinch back out and select a word | The usual bottom sheet is used again | |
+
+In the emulator, pinch-zoom was simulated with Chrome's page-scale setting, which produces the same `visualViewport` state as a real pinch. The real iOS gesture still needs confirming on the phone.
+
 ## 3. Layout and safe areas (iPhone with Face ID)
 
 | Check | Expected | Pass? |

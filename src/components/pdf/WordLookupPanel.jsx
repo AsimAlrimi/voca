@@ -1,21 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../common/Icon";
+import SenseList from "../vocabulary/SenseList";
 import useWordLookup from "../../hooks/useWordLookup";
+import { isPinchZoomed } from "../../hooks/useVisualViewport";
 import { playPronunciation } from "../../services/dictionaryService";
 import { addWord } from "../../services/vocabularyService";
+import { placePopover } from "../../utils/popoverPosition";
 
-const POPOVER_WIDTH = 360;
-const GAP = 10;
+const POPOVER_WIDTH = 360; // on-screen px
+const GAP = 10; // on-screen px
+const EDGE_MARGIN = 12; // on-screen px
 
 /**
  * Shows the definition of a word selected in the PDF and saves it to vocabulary.
- * variant "popover": anchored next to the selection (desktop).
- * variant "sheet": non-modal bottom sheet (mobile), so reading isn't blocked.
  *
+ * - Small screens at normal zoom: non-modal bottom sheet (reading isn't blocked).
+ * - Desktop, or any screen while pinch-zoomed: popover next to the selected word.
+ *
+ * Positioning uses the *visual* viewport, so it stays correct when the page is pinch-zoomed or
+ * panned, and the popover is counter-scaled to stay readable at its normal size.
  * Parent should key this component by word so local state resets per selection.
  */
-export default function WordLookupPanel({ selection, book, variant, onClose, onSaved }) {
+export default function WordLookupPanel({ selection, book, compact, viewport, toolbarRef, onClose, onSaved }) {
   const { word, page, sentence, rect } = selection;
   const { status, lookup, existing, retry, markSaved } = useWordLookup(word);
 
@@ -35,6 +42,10 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
   const sense = entry?.senses[senseIndex] ?? null;
   const displayWord = entry?.word ?? word;
   const example = exampleDraft ?? sense?.example ?? "";
+  const audioOptions = entry?.pronunciations?.filter((p) => p.audio) ?? [];
+
+  const scale = viewport.scale || 1;
+  const isSheet = compact && !isPinchZoomed(viewport);
 
   // Close on Escape.
   useEffect(() => {
@@ -45,35 +56,25 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Position the desktop popover so it never covers the selected word: below or above
-  // (whichever has more room, height capped to fit), else beside the selection.
+  // Popover placement from the real selection rectangle and the visible area.
+  const cssWidth = Math.max(240, Math.min(POPOVER_WIDTH, viewport.width * scale - 2 * EDGE_MARGIN));
   useLayoutEffect(() => {
-    if (variant !== "popover" || !rect) return;
-    const natural = panelRef.current?.scrollHeight ?? 320;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const TOP_LIMIT = 64; // reader toolbar
-    const MIN_USABLE = 260;
-    const spaceBelow = vh - rect.bottom - GAP - 12;
-    const spaceAbove = rect.top - GAP - TOP_LIMIT;
-    const centeredLeft = Math.min(Math.max(12, rect.left + rect.width / 2 - POPOVER_WIDTH / 2), vw - POPOVER_WIDTH - 12);
-
-    let next;
-    if (spaceBelow >= Math.min(natural, MIN_USABLE) && (spaceBelow >= natural || spaceBelow >= spaceAbove)) {
-      next = { left: centeredLeft, top: rect.bottom + GAP, maxHeight: spaceBelow };
-    } else if (spaceAbove >= Math.min(natural, MIN_USABLE)) {
-      const height = Math.min(natural, spaceAbove);
-      next = { left: centeredLeft, top: rect.top - GAP - height, maxHeight: spaceAbove };
-    } else {
-      // Not enough vertical room: place beside the selection.
-      const rightRoom = vw - rect.right - GAP - 12;
-      const left = rightRoom >= POPOVER_WIDTH ? rect.right + GAP : Math.max(12, rect.left - GAP - POPOVER_WIDTH);
-      const maxHeight = vh - TOP_LIMIT - 12;
-      const top = Math.min(Math.max(TOP_LIMIT, rect.top + rect.height / 2 - Math.min(natural, maxHeight) / 2), vh - 12 - Math.min(natural, maxHeight));
-      next = { left, top, maxHeight };
+    if (isSheet || !rect || !panelRef.current) return;
+    // Natural (unconstrained) height in on-screen px: fixed parts + full scroll area.
+    let natural = 2;
+    for (const child of panelRef.current.children) {
+      natural += child.dataset.scrollArea ? child.scrollHeight : child.offsetHeight;
     }
-    setPosition(next);
-  }, [variant, rect, status, showExtras, justSaved]);
+    const toolbarBottom = toolbarRef?.current?.getBoundingClientRect().bottom ?? viewport.top;
+    setPosition(
+      placePopover(
+        rect,
+        viewport,
+        { width: cssWidth / scale, height: natural / scale },
+        { gap: GAP / scale, margin: EDGE_MARGIN / scale, topInset: toolbarBottom, minUsable: 200 / scale }
+      )
+    );
+  }, [isSheet, rect, viewport, scale, cssWidth, toolbarRef, status, showExtras, justSaved, senseIndex, entry]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -87,7 +88,7 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
         definition: sense?.definition ?? definitionDraft,
         example,
         origin: entry?.origin,
-        synonyms: entry?.synonyms,
+        synonyms: sense?.synonyms?.length ? sense.synonyms : entry?.synonyms,
         note,
         source: { bookId: book.id, bookTitle: book.title, page, sentence: sentence || "" },
       });
@@ -102,18 +103,29 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
     }
   };
 
-  const isSheet = variant === "sheet";
-  const containerClass = isSheet
-    ? "fixed inset-x-0 bottom-0 z-40 max-h-[70dvh] rounded-t-2xl border-t pb-[calc(1rem+env(safe-area-inset-bottom))]"
-    : "fixed z-40 rounded-2xl border";
-  const style = isSheet
-    ? undefined
-    : {
-        width: POPOVER_WIDTH,
-        left: position?.left ?? -9999,
-        top: position?.top ?? -9999,
-        maxHeight: position?.maxHeight,
-      };
+  let containerClass;
+  let style;
+  if (isSheet) {
+    // Anchored to the bottom of the visible area (also above the iOS keyboard).
+    containerClass =
+      "fixed z-40 animate-slide-up rounded-t-2xl border-t pb-[calc(1rem+env(safe-area-inset-bottom))]";
+    style = {
+      left: viewport.left,
+      width: viewport.width,
+      bottom: Math.max(0, viewport.layoutHeight - (viewport.top + viewport.height)),
+      maxHeight: viewport.height * 0.7,
+    };
+  } else {
+    containerClass = "fixed z-40 animate-fade-in rounded-2xl border";
+    style = {
+      width: cssWidth,
+      left: position?.left ?? -9999,
+      top: position?.top ?? -9999,
+      maxHeight: position ? position.maxHeight * scale : undefined,
+      transform: scale !== 1 ? `scale(${1 / scale})` : undefined,
+      transformOrigin: "0 0",
+    };
+  }
 
   return (
     <section
@@ -121,41 +133,55 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
       role="dialog"
       aria-modal="false"
       aria-label={`Definition of ${displayWord}`}
-      className={`${containerClass} flex animate-slide-up flex-col overflow-hidden border-border-strong bg-surface-raised text-text-primary shadow-[0_12px_40px_rgba(0,0,0,0.6)]`}
+      data-placement={isSheet ? "sheet" : position?.placement}
+      className={`${containerClass} flex flex-col overflow-hidden border-border-strong bg-surface-raised text-text-primary shadow-[0_12px_40px_rgba(0,0,0,0.6)]`}
       style={style}
     >
       {isSheet && <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border-strong" aria-hidden="true" />}
 
       {/* Header */}
-      <div className="flex items-start gap-2 px-4 pb-2 pt-3">
+      <div className="flex shrink-0 items-start gap-2 px-4 pb-2 pt-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <h2 className="m-0 break-words text-xl font-semibold tracking-tight">{displayWord}</h2>
             {entry?.phonetic && <span className="text-sm text-text-secondary">{entry.phonetic}</span>}
           </div>
-          {lookup?.matchedForm && (
-            <p className="m-0 mt-0.5 text-xs text-text-muted">
-              Base form of “{word}”
-            </p>
-          )}
+          {lookup?.matchedForm && <p className="m-0 mt-0.5 text-xs text-text-muted">Base form of “{word}”</p>}
         </div>
-        {entry?.audio && (
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`Play pronunciation of ${displayWord}`}
-            onClick={() => playPronunciation(entry.audio)}
-          >
-            <Icon name="volume" size={18} />
-          </button>
-        )}
+        {audioOptions.length > 0 &&
+          (audioOptions.length === 1 && !audioOptions[0].accent ? (
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`Play pronunciation of ${displayWord}`}
+              onClick={() => playPronunciation(audioOptions[0].audio)}
+            >
+              <Icon name="volume" size={18} />
+            </button>
+          ) : (
+            <div className="flex shrink-0 items-center">
+              {audioOptions.slice(0, 2).map((p) => (
+                <button
+                  key={p.audio}
+                  type="button"
+                  className="flex min-h-10 items-center gap-1 rounded-full px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                  aria-label={`Play ${p.accent || ""} pronunciation of ${displayWord}`}
+                  title={p.text || undefined}
+                  onClick={() => playPronunciation(p.audio)}
+                >
+                  <Icon name="volume" size={16} />
+                  {p.accent}
+                </button>
+              ))}
+            </div>
+          ))}
         <button type="button" className="icon-btn -mr-2" aria-label="Close definition" onClick={onClose}>
           <Icon name="x" size={18} />
         </button>
       </div>
 
       {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-1">
+      <div data-scroll-area="true" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-1">
         {status === "loading" && (
           <div className="space-y-2 py-2" role="status" aria-label="Looking up definition">
             <div className="h-3 w-16 animate-pulse rounded bg-border-strong" />
@@ -165,31 +191,17 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
         )}
 
         {status === "found" && entry && (
-          <div className="space-y-1.5" role="radiogroup" aria-label="Meanings">
-            {entry.senses.map((item, index) => {
-              const selected = index === senseIndex;
-              return (
-                <button
-                  key={`${item.pos}-${index}`}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => setSenseIndex(index)}
-                  className={`block w-full rounded-xl border px-3 py-2 text-left transition-colors ${
-                    selected ? "border-border-strong bg-surface-hover" : "border-transparent hover:bg-surface-hover/60"
-                  }`}
-                >
-                  {item.pos && <span className="chip mb-1 mr-1.5">{item.pos}</span>}
-                  <span className={`text-sm leading-relaxed ${selected ? "text-text-primary" : "text-text-secondary"}`}>
-                    {item.definition}
-                  </span>
-                </button>
-              );
-            })}
+          <>
+            <SenseList
+              senses={entry.senses}
+              meanings={entry.meanings}
+              selectedIndex={senseIndex}
+              onSelect={setSenseIndex}
+            />
             {entry.senses.length > 1 && (
-              <p className="m-0 px-1 text-[11px] text-text-muted">Tap the meaning that fits your book, then save.</p>
+              <p className="m-0 mt-1.5 px-1 text-[11px] text-text-muted">Choose the meaning that fits your book.</p>
             )}
-          </div>
+          </>
         )}
 
         {status === "failed" && (
@@ -227,8 +239,10 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
           </p>
         )}
 
+        {status === "found" && entry && <WordDetails entry={entry} sense={sense} />}
+
         {status !== "loading" && !existing && (
-          <div className="mt-3">
+          <div className="mt-2">
             <button
               type="button"
               className="flex min-h-9 items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text-primary"
@@ -263,7 +277,7 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border px-4 pt-3">
+      <div className={`shrink-0 border-t border-border px-4 pt-3 ${isSheet ? "" : "pb-3"}`}>
         {saveError && (
           <p role="alert" className="m-0 mb-2 text-sm text-danger">
             {saveError}
@@ -290,10 +304,68 @@ export default function WordLookupPanel({ selection, book, variant, onClose, onS
             disabled={saving || status === "loading"}
           >
             <Icon name="plus" size={17} />
-            {saving ? "Saving…" : status === "failed" && !definitionDraft.trim() ? "Save without definition" : "Save to Vocabulary"}
+            {saving
+              ? "Saving…"
+              : status === "failed" && !definitionDraft.trim()
+                ? "Save without definition"
+                : "Save to Vocabulary"}
           </button>
         )}
       </div>
     </section>
+  );
+}
+
+/** Optional extra information, collapsed so the panel stays compact. */
+function WordDetails({ entry, sense }) {
+  const antonyms = sense?.antonyms?.length ? sense.antonyms : entry.antonyms;
+  const otherSynonyms = entry.synonyms.filter((s) => !sense?.synonyms?.includes(s));
+  const transcriptions = entry.pronunciations.filter((p) => p.text);
+  const hasDetails =
+    entry.origin || antonyms.length || otherSynonyms.length || transcriptions.length > 1 || entry.sourceUrl;
+  if (!hasDetails) return null;
+
+  return (
+    <details className="group mt-2 text-xs text-text-secondary">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 font-medium hover:text-text-primary">
+        <Icon name="chevronDown" size={14} className="transition-transform group-open:rotate-180" />
+        More about this word
+      </summary>
+      <dl className="m-0 mb-1 space-y-1.5 pl-5">
+        {transcriptions.length > 1 && (
+          <div>
+            <dt className="inline text-text-muted">Pronunciation: </dt>
+            <dd className="m-0 inline">
+              {transcriptions.map((p) => `${p.accent ? p.accent + " " : ""}${p.text}`).join(" · ")}
+            </dd>
+          </div>
+        )}
+        {otherSynonyms.length > 0 && (
+          <div>
+            <dt className="inline text-text-muted">{entry.extraSynonyms ? "Related words" : "Synonyms"}: </dt>
+            <dd className="m-0 inline">{otherSynonyms.join(", ")}</dd>
+          </div>
+        )}
+        {antonyms.length > 0 && (
+          <div>
+            <dt className="inline text-text-muted">Opposites: </dt>
+            <dd className="m-0 inline">{antonyms.join(", ")}</dd>
+          </div>
+        )}
+        {entry.origin && (
+          <div>
+            <dt className="inline text-text-muted">Origin: </dt>
+            <dd className="m-0 inline">{entry.origin}</dd>
+          </div>
+        )}
+        {entry.sourceUrl && (
+          <div>
+            <a href={entry.sourceUrl} target="_blank" rel="noreferrer" className="text-text-secondary underline underline-offset-2">
+              Full entry on Wiktionary
+            </a>
+          </div>
+        )}
+      </dl>
+    </details>
   );
 }

@@ -83,6 +83,25 @@ export function ZoomControls({ scale, onZoom, onFitWidth, showLabel = true }) {
   );
 }
 
+/** Switches between vertical (top-to-bottom) and horizontal (side-by-side) page scrolling. */
+export function ScrollModeToggle({ horizontal, onToggle, disabled }) {
+  const label = horizontal
+    ? "Scrolling sideways. Switch to vertical scrolling"
+    : "Scrolling up and down. Switch to horizontal scrolling";
+  return (
+    <button
+      type="button"
+      className="icon-btn"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-label={label}
+      title={horizontal ? "Switch to vertical scrolling" : "Switch to horizontal scrolling"}
+    >
+      <Icon name={horizontal ? "scrollHorizontal" : "scrollVertical"} size={19} />
+    </button>
+  );
+}
+
 export function BookmarkToggle({ active, onToggle, page }) {
   return (
     <button

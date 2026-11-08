@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SpecialZoomLevel, Viewer, Worker } from "@react-pdf-viewer/core";
+import { ScrollMode, SpecialZoomLevel, Viewer, Worker } from "@react-pdf-viewer/core";
 import { pageNavigationPlugin } from "@react-pdf-viewer/page-navigation";
 import { zoomPlugin } from "@react-pdf-viewer/zoom";
 // Bundled locally (same version as the installed pdfjs-dist) so reading works offline.
@@ -13,15 +13,33 @@ import "../../pdf-viewer-overrides.css";
 import Icon from "../common/Icon";
 import useToast from "../../hooks/useToast";
 import useMediaQuery from "../../hooks/useMediaQuery";
+import useVisualViewport, { isPinchZoomed } from "../../hooks/useVisualViewport";
 import useReadingProgress from "../../hooks/useReadingProgress";
 import useWordSelection, { clearDocumentSelection } from "../../hooks/useWordSelection";
 import { SELECTION_MESSAGES } from "../../utils/words";
-import { BookmarkToggle, PageControls, ZoomControls } from "./ReaderControls";
+import { BookmarkToggle, PageControls, ScrollModeToggle, ZoomControls } from "./ReaderControls";
 import WordLookupPanel from "./WordLookupPanel";
 import GoToPageDialog from "./GoToPageDialog";
 import BookmarksDialog from "./BookmarksDialog";
 
 const SCROLL_CONTAINER = ".rpv-core__inner-pages";
+const SCROLL_MODE_KEY = "voca.reader.scrollMode";
+
+function readScrollModePreference() {
+  try {
+    return localStorage.getItem(SCROLL_MODE_KEY) === ScrollMode.Horizontal ? ScrollMode.Horizontal : ScrollMode.Vertical;
+  } catch {
+    return ScrollMode.Vertical; // storage unavailable (e.g. private mode)
+  }
+}
+
+function saveScrollModePreference(mode) {
+  try {
+    localStorage.setItem(SCROLL_MODE_KEY, mode);
+  } catch (error) {
+    console.warn("Couldn't remember the scroll mode", error);
+  }
+}
 
 export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   // react-pdf-viewer plugins use hooks internally: create them unconditionally on every render.
@@ -30,12 +48,25 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   const { jumpToPage, jumpToNextPage, jumpToPreviousPage } = pageNavigation;
   const { zoomTo, CurrentScale } = zoom;
 
+  // Minimal local plugin: the viewer hands plugins its functions on install; we only need
+  // switchScrollMode (no extra dependency). Created once so the viewer installs it once.
+  const switchScrollModeRef = useRef(null);
+  const [scrollModeBridge] = useState(() => ({
+    install: (functions) => {
+      switchScrollModeRef.current = functions.switchScrollMode;
+    },
+  }));
+  const [scrollMode, setScrollMode] = useState(readScrollModePreference);
+  const [initialScrollMode] = useState(scrollMode);
+
   const toast = useToast();
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const viewport = useVisualViewport();
   const progress = useReadingProgress(book.id, initialProgress);
   const { handlePageChange, handleDocumentLoad } = progress;
 
   const viewerRootRef = useRef(null);
+  const toolbarRef = useRef(null);
   const closeOnClear = useRef(false);
 
   const [lookup, setLookup] = useState(null); // valid word selection
@@ -96,17 +127,20 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   // Mobile: the bottom sheet covers the lower part of the screen. Scroll the selected word
   // into the visible top area so the user can still see it in context.
   const lookupKey = lookup ? `${lookup.word}-${lookup.page}` : null;
+  const usesSheet = isMobile && !isPinchZoomed(viewport);
   useEffect(() => {
-    if (!isMobile || !lookupKey) return;
+    if (!usesSheet || !lookupKey) return;
     const scroller = viewerRootRef.current?.querySelector(SCROLL_CONTAINER);
     const selection = window.getSelection();
     if (!scroller || !selection?.rangeCount) return;
     const rect = selection.getRangeAt(0).getBoundingClientRect();
-    const visibleBottom = window.innerHeight * 0.3;
-    if (rect.height && rect.bottom > visibleBottom) {
-      scroller.scrollBy({ top: rect.bottom - window.innerHeight * 0.22, behavior: "smooth" });
+    const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
+    if (rect.height && rect.bottom > visibleHeight * 0.3) {
+      scroller.scrollBy({ top: rect.bottom - visibleHeight * 0.22, behavior: "smooth" });
     }
-  }, [isMobile, lookupKey]);
+    // Run only when a new word opens the sheet, not on every viewport change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupKey]);
 
   // Auto-dismiss the unsupported-selection hint.
   useEffect(() => {
@@ -121,19 +155,22 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
     const scroller = viewerRootRef.current?.querySelector(SCROLL_CONTAINER);
     if (!scroller) return undefined;
     let lastTop = scroller.scrollTop;
+    let lastLeft = scroller.scrollLeft;
 
     const onScroll = () => {
       const top = scroller.scrollTop;
-      const delta = top - lastTop;
+      const left = scroller.scrollLeft;
+      // Moving forward in either direction (down or right) hides the mobile controls.
+      const delta = top - lastTop + (left - lastLeft);
       lastTop = top;
-      if (isMobile && Math.abs(delta) > 6) setChromeVisible(delta < 0 || top < 40);
+      lastLeft = left;
+      if (isMobile && Math.abs(delta) > 6) setChromeVisible(delta < 0 || (top < 40 && left < 40));
 
-      if (!isMobile) {
-        const selection = window.getSelection();
-        if (selection?.rangeCount && !selection.isCollapsed && viewerRootRef.current?.contains(selection.anchorNode)) {
-          const rect = selection.getRangeAt(0).getBoundingClientRect();
-          setLookup((current) => (current ? { ...current, rect } : current));
-        }
+      // Keep the popover attached to the selected word while the pages scroll.
+      const selection = window.getSelection();
+      if (selection?.rangeCount && !selection.isCollapsed && viewerRootRef.current?.contains(selection.anchorNode)) {
+        const rect = selection.getRangeAt(0).getBoundingClientRect();
+        setLookup((current) => (current ? { ...current, rect } : current));
       }
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
@@ -173,6 +210,23 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   );
 
   const goToPage = useCallback((page) => jumpToPage(page - 1), [jumpToPage]);
+
+  // Switching keeps the zoom (viewer state) and scrolls back to the current page. While the
+  // layout changes the viewer reports intermediate pages, so ignore page events briefly.
+  const handleToggleScrollMode = () => {
+    const switchScrollMode = switchScrollModeRef.current;
+    if (!switchScrollMode) return;
+    const next = scrollMode === ScrollMode.Horizontal ? ScrollMode.Vertical : ScrollMode.Horizontal;
+    settled.current = false;
+    switchScrollMode(next);
+    setScrollMode(next);
+    saveScrollModePreference(next);
+    setLookup(null);
+    clearDocumentSelection();
+    setTimeout(() => {
+      settled.current = true;
+    }, 700);
+  };
 
   const handleToggleBookmark = async () => {
     try {
@@ -231,7 +285,11 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-background text-text-primary">
       {/* ── Top bar ── */}
-      <header className="z-20 shrink-0 border-b border-border bg-surface" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header
+        ref={toolbarRef}
+        className="z-20 shrink-0 border-b border-border bg-surface"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="flex h-14 items-center gap-1 px-2 md:gap-2 md:px-3">
           <button type="button" className="icon-btn" onClick={onBack} aria-label="Back to Library" title="Back to Library">
             <Icon name="arrowLeft" size={20} />
@@ -250,6 +308,11 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
             </>
           )}
 
+          <ScrollModeToggle
+            horizontal={scrollMode === ScrollMode.Horizontal}
+            onToggle={handleToggleScrollMode}
+            disabled={!docLoaded}
+          />
           <BookmarkToggle active={progress.isBookmarked} onToggle={handleToggleBookmark} page={progress.currentPage} />
           <button
             type="button"
@@ -287,7 +350,8 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
           <Viewer
             fileUrl={fileUrl}
             theme="dark"
-            plugins={[pageNavigation, zoom]}
+            plugins={[pageNavigation, zoom, scrollModeBridge]}
+            scrollMode={initialScrollMode}
             defaultScale={defaultScale}
             initialPage={initialPage}
             onDocumentLoad={onDocumentLoad}
@@ -330,7 +394,9 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
           key={`${lookup.word}-${lookup.page}`}
           selection={lookup}
           book={book}
-          variant={isMobile ? "sheet" : "popover"}
+          compact={isMobile}
+          viewport={viewport}
+          toolbarRef={toolbarRef}
           onClose={closeLookup}
           onSaved={handleWordSaved}
         />

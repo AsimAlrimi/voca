@@ -45,7 +45,7 @@ function EditWordForm({ entry, onClose, onSave }) {
       phonetic: current.phonetic || found.phonetic,
       audio: current.audio || found.audio,
       origin: current.origin || found.origin,
-      synonyms: current.synonyms.length ? current.synonyms : found.synonyms,
+      synonyms: current.synonyms.length ? current.synonyms : sense.synonyms?.length ? sense.synonyms : found.synonyms,
     }));
     setLookupQuery("");
   };
@@ -121,7 +121,12 @@ function EditWordForm({ entry, onClose, onSave }) {
           )}
           {status === "found" && (
             <>
-              <SenseList senses={lookup.entry.senses} selectedIndex={senseIndex} onSelect={setSenseIndex} />
+              <SenseList
+                senses={lookup.entry.senses}
+                meanings={lookup.entry.meanings}
+                selectedIndex={senseIndex}
+                onSelect={setSenseIndex}
+              />
               <div className="mt-3 flex justify-end gap-2">
                 <button type="button" className="btn btn-ghost min-h-9" onClick={() => setLookupQuery("")}>
                   Cancel
@@ -150,7 +155,7 @@ function EditWordForm({ entry, onClose, onSave }) {
         </p>
       )}
 
-      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+      <div className="sticky -bottom-5 z-10 -mx-5 flex flex-col-reverse gap-2 border-t border-border bg-surface px-5 pb-5 pt-3 sm:flex-row sm:justify-end">
         <button type="button" className="btn btn-secondary" onClick={onClose}>
           Cancel
         </button>

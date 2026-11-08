@@ -36,8 +36,9 @@ Context and working rules for Claude Code sessions in this repository. Read this
 
 External services (browser `fetch`, no API keys):
 
-- `https://api.dictionaryapi.dev` — definitions, phonetics, audio (`src/services/dictionaryService.js`). It intermittently returns 502 without CORS headers (seen by the browser as "Failed to fetch"); the service retries transient failures twice (0.7 s, 1.5 s).
-- `https://api.datamuse.com` — synonym fallback (short 2.5 s timeout; optional).
+- `https://api.dictionaryapi.dev` — definitions, phonetics, audio (`src/services/dictionaryService.js`). It intermittently returns 502 without CORS headers (seen by the browser as "Failed to fetch"); the service retries those twice (0.7 s, 1.5 s). Timeouts (8 s) are **not** retried. `parseEntries()` merges all entries, groups meanings by part of speech (≤6 per part of speech, ≤16 total), dedupes definitions, keeps per-meaning examples/synonyms/antonyms, per-accent pronunciations (US/UK/…), origin, and the Wiktionary source link.
+- Results are cached in memory (LRU, 200 words, incl. base forms) and concurrent lookups of one word share a single request; a caller's AbortSignal only stops that caller waiting.
+- `https://api.datamuse.com` — optional synonyms via `getSynonyms()`, fetched in the background by `useWordLookup` only when the dictionary has none. Never delays the definition; failures resolve to `[]`.
 
 The PDF.js worker is **bundled locally** (`import … from "pdfjs-dist/build/pdf.worker.min.js?url"`) so its version always matches the installed `pdfjs-dist` and reading works offline. Never load it from a CDN.
 
@@ -68,12 +69,12 @@ src/
 │   └── practice/             PracticeSetup, QuestionCard, ResultScreen
 ├── context/ToastContext.js   The only React context (app-wide action feedback)
 ├── hooks/                    useBooks, useVocabulary, useReadingProgress, useWordSelection, useWordLookup,
-│                             useToast, useMediaQuery, useDebouncedValue, useObjectUrl
+│                             useToast, useMediaQuery, useDebouncedValue, useObjectUrl, useVisualViewport
 ├── services/                 bookService, readingProgressService, vocabularyService, practiceService,
 │                             dictionaryService, backupService
 └── utils/                    indexedDB (DB access + StorageError), textSelection (PDF selection → word),
                               words (validation/normalisation), practice (quiz generation), backup (file
-                              format + merge plan), format (display helpers)
+                              format + merge plan), format (display helpers), popoverPosition (placement)
 
 tests/                        (repo root) Node unit tests for utils + dictionary service — `npm test`
 ```
@@ -87,7 +88,18 @@ tests/                        (repo root) Node unit tests for utils + dictionary
 | `vocabulary` | `id` | `wordKey` (unique), `createdAt` | `{ id, word, wordKey, phonetic, audio, pos, definition, example, origin, synonyms[], note, source: { bookId, bookTitle, page, sentence } \| null, createdAt, updatedAt }` |
 | `practiceStats` | `wordId` | — | `{ wordId, seen, correct, streak, lastPracticedAt }` |
 
-`localStorage` holds only `voca.lastExportAt` (backup reminder) and `voca.chunkReloadAt` (sessionStorage).
+`localStorage` holds only `voca.lastExportAt` (backup reminder) and `voca.reader.scrollMode` (reader preference); `voca.chunkReloadAt` is in sessionStorage.
+
+### Reader scroll modes
+
+- Vertical (default) or horizontal, toggled in the reader toolbar; preference in `localStorage` (`voca.reader.scrollMode`).
+- Switching uses the viewer's own `switchScrollMode`, obtained through a tiny local plugin object (`scrollModeBridge` in `PDFReader.jsx`) — no extra package. The viewer keeps the zoom and scrolls back to the current page; page events are ignored for 700 ms during the switch.
+- Horizontal mode uses CSS `scroll-snap-type: x proximity` with `scroll-snap-align: start`. **Keep `start`:** the viewer aligns a page's left edge when navigating; `center` broke go-to-page/previous on wide screens.
+
+### Popover positioning and pinch-zoom
+
+- Pinch-zoom on phones/trackpads zooms the *visual* viewport only. All panel positioning uses `useVisualViewport()` (`window.visualViewport`) plus the pure `utils/popoverPosition.js#placePopover()` (unit-tested), in layout-viewport px.
+- Phones at normal zoom: bottom sheet anchored to the visible bottom (also above the iOS keyboard). Desktop, or any screen while pinch-zoomed: popover next to the word, counter-scaled with `transform: scale(1/scale)` so it keeps its normal size; it never covers the word and stays inside the visible area.
 
 ### How word selection works
 
@@ -140,6 +152,8 @@ tests/                        (repo root) Node unit tests for utils + dictionary
 | Reader route lazy-loaded; `vite:preloadError` triggers one reload after a deploy | Implemented |
 | Bookmarks: multiple pages per book, persisted | Implemented |
 | Single words only (no phrases) for saving | Implemented |
+| Reader scroll modes: vertical / horizontal (per-device preference) | Implemented |
+| Lookup panel positioned against the visual viewport (pinch-zoom safe) | Implemented |
 | Practice: Definition → Word, Word → Definition, Mixed; 3 choices; min 3 words; ambiguous questions skipped | Implemented |
 | Vocabulary JSON export/import with preview (new/updated/skipped) and atomic apply; words only | Implemented |
 | Dark theme only; responsive (sidebar ≥ md, floating bottom bar on mobile) | Implemented |
