@@ -13,34 +13,39 @@ import "../../pdf-viewer-overrides.css";
 import Icon from "../common/Icon";
 import useToast from "../../hooks/useToast";
 import useMediaQuery from "../../hooks/useMediaQuery";
-import useVisualViewport, { isPinchZoomed } from "../../hooks/useVisualViewport";
+import useVisualViewport from "../../hooks/useVisualViewport";
 import useReadingProgress from "../../hooks/useReadingProgress";
 import useWordSelection, { clearDocumentSelection } from "../../hooks/useWordSelection";
+import useReaderPreferences from "../../hooks/useReaderPreferences";
+import useReaderGestures from "../../hooks/useReaderGestures";
 import { SELECTION_MESSAGES } from "../../utils/words";
-import { BookmarkToggle, PageControls, ScrollModeToggle, ZoomControls } from "./ReaderControls";
+import { scrollModeFor } from "../../utils/readerPreferences";
+import { zoomStep } from "../../utils/readerGestures";
+import { flattenOutline, resolveOutline } from "../../utils/outline";
+import { ReaderBottomBar, ReaderToolbar } from "./ReaderToolbar";
+import DisplayMenu from "./DisplayMenu";
+import ReaderNavigator from "./ReaderNavigator";
 import WordLookupPanel from "./WordLookupPanel";
 import GoToPageDialog from "./GoToPageDialog";
-import BookmarksDialog from "./BookmarksDialog";
 
-const SCROLL_CONTAINER = ".rpv-core__inner-pages";
-const SCROLL_MODE_KEY = "voca.reader.scrollMode";
+const SIDE_PANEL_WIDTH = 400; // keep in sync with WordLookupPanel
+const FIT_LEVELS = {
+  "page-width": SpecialZoomLevel.PageWidth,
+  "page-fit": SpecialZoomLevel.PageFit,
+};
 
-function readScrollModePreference() {
-  try {
-    return localStorage.getItem(SCROLL_MODE_KEY) === ScrollMode.Horizontal ? ScrollMode.Horizontal : ScrollMode.Vertical;
-  } catch {
-    return ScrollMode.Vertical; // storage unavailable (e.g. private mode)
-  }
+/** Reports the viewer's current zoom (from the zoom plugin's render prop) to the parent. */
+function ScaleReporter({ scale, onChange }) {
+  useEffect(() => {
+    onChange(scale);
+  }, [scale, onChange]);
+  return null;
 }
 
-function saveScrollModePreference(mode) {
-  try {
-    localStorage.setItem(SCROLL_MODE_KEY, mode);
-  } catch (error) {
-    console.warn("Couldn't remember the scroll mode", error);
-  }
-}
-
+/**
+ * The PDF reader: a fixed toolbar (always visible), the document, and word lookup.
+ * Phones get an additional fixed bottom bar for page and zoom controls.
+ */
 export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   // react-pdf-viewer plugins use hooks internally: create them unconditionally on every render.
   const pageNavigation = pageNavigationPlugin();
@@ -48,42 +53,60 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   const { jumpToPage, jumpToNextPage, jumpToPreviousPage } = pageNavigation;
   const { zoomTo, CurrentScale } = zoom;
 
-  // Minimal local plugin: the viewer hands plugins its functions on install; we only need
+  // Minimal local plugin: the viewer hands plugins its functions on install; we use
   // switchScrollMode (no extra dependency). Created once so the viewer installs it once.
-  const switchScrollModeRef = useRef(null);
-  const [scrollModeBridge] = useState(() => ({
+  const viewerFunctions = useRef(null);
+  const [viewerBridge] = useState(() => ({
     install: (functions) => {
-      switchScrollModeRef.current = functions.switchScrollMode;
+      viewerFunctions.current = functions;
     },
   }));
-  const [scrollMode, setScrollMode] = useState(readScrollModePreference);
-  const [initialScrollMode] = useState(scrollMode);
 
   const toast = useToast();
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const isTouch = useMediaQuery("(pointer: coarse)");
+  const isWide = useMediaQuery("(min-width: 1100px)"); // room for view options in the toolbar
   const viewport = useVisualViewport();
+  const [preferences, updatePreferences] = useReaderPreferences();
   const progress = useReadingProgress(book.id, initialProgress);
   const { handlePageChange, handleDocumentLoad } = progress;
 
   const viewerRootRef = useRef(null);
   const toolbarRef = useRef(null);
   const closeOnClear = useRef(false);
+  const scaleRef = useRef(1);
 
-  const [lookup, setLookup] = useState(null); // valid word selection
-  const [hint, setHint] = useState(null); // message for an unsupported selection
-  const [dialog, setDialog] = useState(null); // "page" | "bookmarks" | null
-  const [chromeVisible, setChromeVisible] = useState(true);
+  const [lookup, setLookup] = useState(null); // { ...selection, expanded }
+  const [hint, setHint] = useState(null);
+  const [dialog, setDialog] = useState(null); // "page" | "navigate" | null
+  const [displayOpen, setDisplayOpen] = useState(false);
   const [docLoaded, setDocLoaded] = useState(false);
-  const [noTextLayer, setNoTextLayer] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [outline, setOutline] = useState({ status: "loading", items: [] });
 
-  // Defaults chosen once: fit width on small screens, comfortable fixed zoom on desktop.
-  const [defaultScale] = useState(() =>
-    window.matchMedia("(max-width: 1023px)").matches ? SpecialZoomLevel.PageWidth : 1.25
-  );
+  // Values the viewer only reads once, on open.
+  const [initialScrollMode] = useState(() => ScrollMode[scrollModeFor(preferences)]);
+  const [defaultScale] = useState(() => {
+    if (FIT_LEVELS[preferences.zoom]) return FIT_LEVELS[preferences.zoom];
+    if (preferences.zoom) return Number(preferences.zoom);
+    if (preferences.mode === "pages") return SpecialZoomLevel.PageFit; // show the whole page
+    return window.matchMedia("(max-width: 1023px)").matches ? SpecialZoomLevel.PageWidth : 1.25;
+  });
   const [initialPage] = useState(() => Math.max(0, (initialProgress?.lastPage ?? 1) - 1));
-  // While opening at a saved page, the viewer briefly reports other pages as it measures
-  // page sizes. Ignore page events during a short settle window after the document loads.
+  // While opening at a saved page (or switching layout), the viewer briefly reports other
+  // pages as it measures them. Ignore page events during a short settle window.
   const settled = useRef(initialPage === 0);
+  const unsettle = (ms) => {
+    settled.current = false;
+    setTimeout(() => {
+      settled.current = true;
+    }, ms);
+  };
+
+  const handleScale = useCallback((value) => {
+    scaleRef.current = value;
+    setScale(value);
+  }, []);
 
   // ── Word selection ────────────────────────────────────────────────────────
   const handleSelection = useCallback((result) => {
@@ -98,7 +121,8 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
     closeOnClear.current = false;
     if (result.ok) {
       setHint(null);
-      setLookup(result);
+      setDisplayOpen(false);
+      setLookup({ ...result, expanded: false });
     } else {
       setHint(SELECTION_MESSAGES[result.reason] ?? SELECTION_MESSAGES["not-a-word"]);
     }
@@ -106,7 +130,7 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
 
   useWordSelection(viewerRootRef, handleSelection);
 
-  // Tapping/clicking the page (outside the panel) dismisses the panel once the selection clears.
+  // Clicking the page (outside the panel) dismisses the panel once the selection clears.
   const handleViewerPointerDown = () => {
     if (lookup) closeOnClear.current = true;
   };
@@ -116,66 +140,138 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
     clearDocumentSelection();
   }, []);
 
+  const setLookupExpanded = useCallback((expanded) => {
+    setLookup((current) => (current ? { ...current, expanded } : current));
+  }, []);
+
   const handleWordSaved = useCallback(
     (record) => {
       clearDocumentSelection(); // remove highlight; panel stays to show "Saved"
-      if (isMobile) toast.show(`Saved “${record.word}” to Vocabulary`, { type: "success" });
+      toast.show(`Saved “${record.word}” to Vocabulary`, { type: "success", duration: 2500 });
     },
-    [isMobile, toast]
+    [toast]
   );
 
-  // Mobile: the bottom sheet covers the lower part of the screen. Scroll the selected word
-  // into the visible top area so the user can still see it in context.
-  const lookupKey = lookup ? `${lookup.word}-${lookup.page}` : null;
-  const usesSheet = isMobile && !isPinchZoomed(viewport);
-  useEffect(() => {
-    if (!usesSheet || !lookupKey) return;
-    const scroller = viewerRootRef.current?.querySelector(SCROLL_CONTAINER);
-    const selection = window.getSelection();
-    if (!scroller || !selection?.rangeCount) return;
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
-    const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
-    if (rect.height && rect.bottom > visibleHeight * 0.3) {
-      scroller.scrollBy({ top: rect.bottom - visibleHeight * 0.22, behavior: "smooth" });
-    }
-    // Run only when a new word opens the sheet, not on every viewport change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lookupKey]);
-
-  // Auto-dismiss the unsupported-selection hint.
   useEffect(() => {
     if (!hint) return undefined;
     const timer = setTimeout(() => setHint(null), 3500);
     return () => clearTimeout(timer);
   }, [hint]);
 
-  // ── Scroll: auto-hide chrome on mobile, keep the desktop popover attached ──
+  // ── Navigation and zoom ──────────────────────────────────────────────────
+  const goToPage = useCallback((page) => jumpToPage(page - 1), [jumpToPage]);
+  const previousPage = useCallback(() => jumpToPreviousPage(), [jumpToPreviousPage]);
+  const nextPage = useCallback(() => jumpToNextPage(), [jumpToNextPage]);
+
+  const applyZoom = useCallback(
+    (value) => {
+      zoomTo(value);
+      setLookup(null);
+      clearDocumentSelection();
+    },
+    [zoomTo]
+  );
+
+  /** value: "page-width" | "page-fit" | percentage as a string ("125"). */
+  const handleZoomSelect = (value) => {
+    if (FIT_LEVELS[value]) {
+      updatePreferences({ zoom: value });
+      applyZoom(FIT_LEVELS[value]);
+      return;
+    }
+    const next = Number(value) / 100;
+    if (!Number.isFinite(next) || next <= 0) return;
+    updatePreferences({ zoom: next === 1 || next === 1.5 ? String(next) : null });
+    applyZoom(next);
+  };
+
+  const handleZoomStep = (direction) => {
+    updatePreferences({ zoom: null });
+    applyZoom(zoomStep(scaleRef.current, direction));
+  };
+
+  // Touch: swipe to turn pages in Pages mode and pinch to zoom. Ctrl/⌘ + wheel zooms on desktop.
+  // (No tap zones: all controls are in the toolbar.)
+  useReaderGestures(viewerRootRef, {
+    mode: preferences.mode,
+    pinchEnabled: isTouch && preferences.pinch === "sharp",
+    getScale: () => scaleRef.current,
+    onSwipe: (direction) => (direction === "next" ? nextPage() : previousPage()),
+    onZoom: (value) => {
+      updatePreferences({ zoom: null });
+      applyZoom(value);
+    },
+  });
+
+  // A sideways swipe at the edge of the content would otherwise trigger the browser's
+  // "swipe to go back" (Chrome/Android) and close the book. Disable it while reading.
   useEffect(() => {
-    if (!docLoaded) return undefined;
-    const scroller = viewerRootRef.current?.querySelector(SCROLL_CONTAINER);
-    if (!scroller) return undefined;
-    let lastTop = scroller.scrollTop;
-    let lastLeft = scroller.scrollLeft;
+    const targets = [document.documentElement, document.body];
+    const previous = targets.map((el) => el.style.overscrollBehaviorX);
+    targets.forEach((el) => {
+      el.style.overscrollBehaviorX = "none";
+    });
+    return () =>
+      targets.forEach((el, i) => {
+        el.style.overscrollBehaviorX = previous[i];
+      });
+  }, []);
 
+  // Keyboard: in Pages mode, arrows / Page Up / Page Down / Space turn pages.
+  useEffect(() => {
+    if (preferences.mode !== "pages") return undefined;
+    const onKey = (event) => {
+      if (dialog || event.target.closest?.("input, textarea, select, button, [role=dialog], dialog")) return;
+      if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+        event.preventDefault();
+        nextPage();
+      } else if (["ArrowLeft", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        previousPage();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preferences.mode, dialog, nextPage, previousPage]);
+
+  // Keep the card attached to its word while pages scroll (any scroll container, any mode).
+  useEffect(() => {
+    const root = viewerRootRef.current;
+    if (!root || !docLoaded) return undefined;
     const onScroll = () => {
-      const top = scroller.scrollTop;
-      const left = scroller.scrollLeft;
-      // Moving forward in either direction (down or right) hides the mobile controls.
-      const delta = top - lastTop + (left - lastLeft);
-      lastTop = top;
-      lastLeft = left;
-      if (isMobile && Math.abs(delta) > 6) setChromeVisible(delta < 0 || (top < 40 && left < 40));
-
-      // Keep the popover attached to the selected word while the pages scroll.
       const selection = window.getSelection();
-      if (selection?.rangeCount && !selection.isCollapsed && viewerRootRef.current?.contains(selection.anchorNode)) {
+      if (selection?.rangeCount && !selection.isCollapsed && root.contains(selection.anchorNode)) {
         const rect = selection.getRangeAt(0).getBoundingClientRect();
         setLookup((current) => (current ? { ...current, rect } : current));
       }
     };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller.removeEventListener("scroll", onScroll);
-  }, [docLoaded, isMobile]);
+    root.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => root.removeEventListener("scroll", onScroll, { capture: true });
+  }, [docLoaded]);
+
+  // ── View settings ────────────────────────────────────────────────────────
+  const handlePreferencesChange = (changes) => {
+    const next = { ...preferences, ...changes };
+    const before = scrollModeFor(preferences);
+    const after = scrollModeFor(next);
+    if (before !== after && viewerFunctions.current?.switchScrollMode) {
+      unsettle(700);
+      viewerFunctions.current.switchScrollMode(ScrollMode[after]);
+      setLookup(null);
+      clearDocumentSelection();
+    }
+    // Entering page-by-page view: fit the whole page on screen.
+    if (next.mode === "pages" && preferences.mode !== "pages") {
+      updatePreferences({ ...changes, zoom: "page-fit" });
+      setTimeout(() => applyZoom(SpecialZoomLevel.PageFit), 150);
+      return;
+    }
+    updatePreferences(changes);
+  };
+
+  const viewMode = preferences.mode === "pages" ? "pages" : preferences.direction;
+  const handleViewMode = (value) =>
+    handlePreferencesChange(value === "pages" ? { mode: "pages" } : { mode: "continuous", direction: value });
 
   // ── Document events ──────────────────────────────────────────────────────
   const onDocumentLoad = useCallback(
@@ -187,18 +283,32 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
         settled.current = true;
       }, 800);
 
-      // Detect scanned PDFs (no text layer) so we can explain why words can't be selected.
-      const pagesToCheck = Math.min(doc.numPages, 3);
+      // Scanned PDFs have no text layer: explain why words can't be selected.
       Promise.all(
-        Array.from({ length: pagesToCheck }, (_, i) => doc.getPage(i + 1).then((page) => page.getTextContent()))
+        Array.from({ length: Math.min(doc.numPages, 3) }, (_, i) => doc.getPage(i + 1).then((page) => page.getTextContent()))
       )
         .then((contents) => {
           const hasText = contents.some((content) => content.items.some((item) => item.str?.trim()));
-          setNoTextLayer(!hasText);
+          if (!hasText) {
+            toast.show("This PDF looks scanned, so words can’t be selected. Voca needs PDFs with real text.", {
+              type: "info",
+              duration: 7000,
+            });
+          }
         })
         .catch((error) => console.warn("Text layer check failed", error));
+
+      // Table of contents, if the PDF has one.
+      doc
+        .getOutline()
+        .then((nodes) => resolveOutline(doc, flattenOutline(nodes)))
+        .then((items) => setOutline({ status: "ready", items }))
+        .catch((error) => {
+          console.warn("Reading the table of contents failed", error);
+          setOutline({ status: "ready", items: [] });
+        });
     },
-    [handleDocumentLoad]
+    [handleDocumentLoad, toast]
   );
 
   const onPageChange = useCallback(
@@ -209,25 +319,7 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
     [handlePageChange]
   );
 
-  const goToPage = useCallback((page) => jumpToPage(page - 1), [jumpToPage]);
-
-  // Switching keeps the zoom (viewer state) and scrolls back to the current page. While the
-  // layout changes the viewer reports intermediate pages, so ignore page events briefly.
-  const handleToggleScrollMode = () => {
-    const switchScrollMode = switchScrollModeRef.current;
-    if (!switchScrollMode) return;
-    const next = scrollMode === ScrollMode.Horizontal ? ScrollMode.Vertical : ScrollMode.Horizontal;
-    settled.current = false;
-    switchScrollMode(next);
-    setScrollMode(next);
-    saveScrollModePreference(next);
-    setLookup(null);
-    clearDocumentSelection();
-    setTimeout(() => {
-      settled.current = true;
-    }, 700);
-  };
-
+  // ── Bookmarks ────────────────────────────────────────────────────────────
   const handleToggleBookmark = async () => {
     try {
       const added = await progress.toggleCurrentBookmark();
@@ -251,143 +343,104 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
   };
 
   useEffect(() => {
-    if (progress.saveError) {
-      toast.show("Your reading position couldn't be saved on this device.", { type: "error" });
-    }
+    if (progress.saveError) toast.show("Your reading position couldn't be saved on this device.", { type: "error" });
   }, [progress.saveError, toast]);
 
-  const showBottomBar = chromeVisible && !lookup;
-
-  const pageControls = (
-    <PageControls
-      currentPage={progress.currentPage}
-      pageCount={progress.pageCount}
-      onPrevious={jumpToPreviousPage}
-      onNext={jumpToNextPage}
-      onOpenJump={() => setDialog("page")}
-      compact={isMobile}
-    />
-  );
-
-  const zoomControls = (
-    <CurrentScale>
-      {({ scale }) => (
-        <ZoomControls
-          scale={scale}
-          onZoom={zoomTo}
-          onFitWidth={() => zoomTo(SpecialZoomLevel.PageWidth)}
-          showLabel={!isMobile}
-        />
-      )}
-    </CurrentScale>
-  );
+  const sidePanelOpen = Boolean(lookup?.expanded) && !isMobile;
+  const pinchHandledByApp = isTouch && preferences.pinch === "sharp";
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-background text-text-primary">
-      {/* ── Top bar ── */}
-      <header
-        ref={toolbarRef}
-        className="z-20 shrink-0 border-b border-border bg-surface"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
+    <div className={`reader-root reader-theme-${preferences.theme} fixed inset-0 z-30 text-text-primary`} data-mode={preferences.mode}>
+      <div
+        className="absolute inset-y-0 left-0 flex flex-col transition-[right] duration-200"
+        style={{ right: sidePanelOpen ? SIDE_PANEL_WIDTH : 0 }}
       >
-        <div className="flex h-14 items-center gap-1 px-2 md:gap-2 md:px-3">
-          <button type="button" className="icon-btn" onClick={onBack} aria-label="Back to Library" title="Back to Library">
-            <Icon name="arrowLeft" size={20} />
-          </button>
-          <div className="min-w-0 flex-1 md:flex-none md:basis-64 lg:basis-80">
-            <h1 className="m-0 truncate text-sm font-medium" title={book.title}>
-              {book.title}
-            </h1>
+        <ReaderToolbar
+          ref={toolbarRef}
+          compact={isMobile}
+          title={book.title}
+          onBack={onBack}
+          currentPage={progress.currentPage}
+          pageCount={progress.pageCount}
+          onGoToPage={goToPage}
+          onPrevious={previousPage}
+          onNext={nextPage}
+          scale={scale}
+          zoomPreset={preferences.zoom}
+          onZoomSelect={handleZoomSelect}
+          onZoomStep={handleZoomStep}
+          showViewOptions={isWide}
+          viewMode={viewMode}
+          onViewMode={handleViewMode}
+          theme={preferences.theme}
+          onTheme={(theme) => handlePreferencesChange({ theme })}
+          onOpenContents={() => setDialog("navigate")}
+          onToggleDisplay={() => setDisplayOpen((open) => !open)}
+          displayOpen={displayOpen}
+          bookmarked={progress.isBookmarked}
+          onToggleBookmark={handleToggleBookmark}
+        />
+
+        {/* ── Document ── */}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={viewerRootRef}
+            className="absolute inset-0"
+            style={{ touchAction: pinchHandledByApp ? "pan-x pan-y" : undefined }}
+            onPointerDown={handleViewerPointerDown}
+          >
+            <Worker workerUrl={pdfWorkerUrl}>
+              <Viewer
+                fileUrl={fileUrl}
+                theme="dark"
+                plugins={[pageNavigation, zoom, viewerBridge]}
+                scrollMode={initialScrollMode}
+                defaultScale={defaultScale}
+                initialPage={initialPage}
+                onDocumentLoad={onDocumentLoad}
+                onPageChange={onPageChange}
+                renderLoader={(percent) => <DocumentLoader percent={percent} />}
+                renderError={(error) => <DocumentError error={error} onBack={onBack} />}
+              />
+            </Worker>
           </div>
 
-          {!isMobile && (
-            <>
-              <div className="flex flex-1 justify-center">{pageControls}</div>
-              {zoomControls}
-              <span className="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-            </>
+          <CurrentScale>{({ scale: current }) => <ScaleReporter scale={current} onChange={handleScale} />}</CurrentScale>
+
+          <DisplayMenu
+            open={displayOpen && !isWide}
+            preferences={preferences}
+            scale={scale}
+            onChange={handlePreferencesChange}
+            onZoomPreset={handleZoomSelect}
+            onZoomStep={handleZoomStep}
+            showZoom={isMobile}
+            showPinchOption={isTouch}
+            onClose={() => setDisplayOpen(false)}
+            anchorRef={toolbarRef}
+          />
+
+          {hint && !lookup && (
+            <div role="status" className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
+              <p className="m-0 flex animate-slide-up items-center gap-2 rounded-xl border border-border-strong bg-surface-raised px-4 py-2.5 text-sm text-text-primary shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+                <Icon name="info" size={16} className="text-text-secondary" />
+                {hint}
+              </p>
+            </div>
           )}
-
-          <ScrollModeToggle
-            horizontal={scrollMode === ScrollMode.Horizontal}
-            onToggle={handleToggleScrollMode}
-            disabled={!docLoaded}
-          />
-          <BookmarkToggle active={progress.isBookmarked} onToggle={handleToggleBookmark} page={progress.currentPage} />
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setDialog("bookmarks")}
-            aria-label={`Bookmarks (${progress.bookmarks.length})`}
-            title="Bookmarks"
-          >
-            <span className="relative">
-              <Icon name="bookmarks" size={19} />
-              {progress.bookmarks.length > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[9px] font-semibold text-background">
-                  {progress.bookmarks.length}
-                </span>
-              )}
-            </span>
-          </button>
         </div>
-      </header>
 
-      {noTextLayer && docLoaded && (
-        <div className="z-10 border-b border-border bg-surface px-4 py-2 text-xs text-text-secondary md:text-center" role="note">
-          <Icon name="info" size={13} className="mr-1.5 inline align-[-2px]" />
-          This PDF looks scanned, so words can’t be selected. Voca needs PDFs with real text.
-        </div>
-      )}
-
-      {/* ── Document ── */}
-      <div
-        ref={viewerRootRef}
-        className="relative min-h-0 flex-1"
-        onPointerDown={handleViewerPointerDown}
-      >
-        <Worker workerUrl={pdfWorkerUrl}>
-          <Viewer
-            fileUrl={fileUrl}
-            theme="dark"
-            plugins={[pageNavigation, zoom, scrollModeBridge]}
-            scrollMode={initialScrollMode}
-            defaultScale={defaultScale}
-            initialPage={initialPage}
-            onDocumentLoad={onDocumentLoad}
-            onPageChange={onPageChange}
-            renderLoader={(percent) => <DocumentLoader percent={percent} />}
-            renderError={(error) => <DocumentError error={error} onBack={onBack} />}
+        {isMobile && (
+          <ReaderBottomBar
+            currentPage={progress.currentPage}
+            pageCount={progress.pageCount}
+            onPrevious={previousPage}
+            onNext={nextPage}
+            onOpenJump={() => setDialog("page")}
+            onZoomStep={handleZoomStep}
           />
-        </Worker>
+        )}
       </div>
-
-      {/* ── Mobile bottom bar ── */}
-      {isMobile && (
-        <div
-          className={`absolute inset-x-3 z-20 flex items-center justify-between rounded-2xl border border-white/10 bg-surface/90 px-1 backdrop-blur-xl transition-all duration-200 ${
-            showBottomBar ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"
-          }`}
-          style={{ bottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-        >
-          {pageControls}
-          {zoomControls}
-        </div>
-      )}
-
-      {/* ── Selection feedback ── */}
-      {hint && !lookup && (
-        <div
-          role="status"
-          className="absolute inset-x-0 z-30 flex justify-center px-4"
-          style={{ bottom: isMobile ? "calc(env(safe-area-inset-bottom) + 5rem)" : "1.5rem" }}
-        >
-          <p className="m-0 flex animate-slide-up items-center gap-2 rounded-xl border border-border-strong bg-surface-raised px-4 py-2.5 text-sm text-text-primary shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-            <Icon name="info" size={16} className="text-text-secondary" />
-            {hint}
-          </p>
-        </div>
-      )}
 
       {lookup && (
         <WordLookupPanel
@@ -397,6 +450,9 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
           compact={isMobile}
           viewport={viewport}
           toolbarRef={toolbarRef}
+          toolbarVisible
+          expanded={lookup.expanded}
+          onExpandChange={setLookupExpanded}
           onClose={closeLookup}
           onSaved={handleWordSaved}
         />
@@ -409,13 +465,15 @@ export default function PDFReader({ book, fileUrl, initialProgress, onBack }) {
         onGo={goToPage}
         onClose={() => setDialog(null)}
       />
-      <BookmarksDialog
-        open={dialog === "bookmarks"}
+      <ReaderNavigator
+        open={dialog === "navigate"}
+        outline={outline.items}
+        outlineStatus={outline.status}
         bookmarks={progress.bookmarks}
         currentPage={progress.currentPage}
         pageCount={progress.pageCount}
         onGo={goToPage}
-        onRemove={handleRemoveBookmark}
+        onRemoveBookmark={handleRemoveBookmark}
         onClose={() => setDialog(null)}
       />
     </div>

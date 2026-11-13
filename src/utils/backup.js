@@ -1,5 +1,6 @@
 // Vocabulary backup file format + import planning. React-free, no storage access.
 import { normalizeWord, validateWord } from "./words.js";
+import { createId as newId } from "./id.js";
 
 export const BACKUP_VERSION = 1;
 
@@ -90,7 +91,7 @@ export function parseBackup(fileText) {
  * Merge rule: match by wordKey. New → add. Existing → replace only if the imported copy
  * has a newer updatedAt (keeping the existing id so practice stats stay linked). Else skip.
  */
-export function planImport(existingWords, entries, invalid = 0, createId = () => crypto.randomUUID()) {
+export function planImport(existingWords, entries, invalid = 0, createId = newId) {
   const existingByKey = new Map(existingWords.map((w) => [w.wordKey, w]));
   const seenInFile = new Set();
   const toAdd = [];

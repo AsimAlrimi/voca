@@ -1,5 +1,6 @@
 import { STORES, StorageError, getAll, getByIndex, runTransaction } from "../utils/indexedDB";
 import { normalizeWord } from "../utils/words";
+import { createId } from "../utils/id";
 
 const EDITABLE_FIELDS = ["word", "phonetic", "pos", "definition", "example", "origin", "synonyms", "note", "audio"];
 
@@ -12,7 +13,7 @@ export function createWordRecord(input) {
   const now = Date.now();
   const word = clean(input.word);
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     word,
     wordKey: normalizeWord(word),
     phonetic: clean(input.phonetic) || "",

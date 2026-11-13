@@ -7,6 +7,7 @@ import {
   runTransaction,
   requestPersistentStorage,
 } from "../utils/indexedDB";
+import { createId } from "../utils/id";
 
 const PDF_SIGNATURE = "%PDF-";
 
@@ -34,7 +35,7 @@ export async function saveBook(file) {
   await validatePdfFile(file);
 
   const book = {
-    id: crypto.randomUUID(),
+    id: createId(),
     title: titleFromFileName(file.name),
     author: "Unknown",
     fileName: file.name,
