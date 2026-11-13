@@ -92,6 +92,17 @@ const PATHS = {
       <path d="M7 12h10" />
     </>
   ),
+  contents: (
+    <>
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </>
+  ),
+  pageSingle: <rect x="6" y="3" width="12" height="18" rx="1.5" />,
   scrollVertical: (
     <>
       <rect x="6" y="3" width="12" height="7" rx="1.5" />

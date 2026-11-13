@@ -64,17 +64,20 @@ src/
 │   ├── common/               Icon, Modal (native <dialog>), ConfirmDialog, StatusMessage, ToastProvider
 │   ├── layout/               Navbar (sidebar / mobile bottom bar), PageHeader
 │   ├── library/              BookCard, BookCover
-│   ├── pdf/                  PDFReader, ReaderControls, WordLookupPanel, GoToPageDialog, BookmarksDialog
+│   ├── pdf/                  PDFReader, ReaderToolbar (fixed toolbar + phone bottom bar), DisplayMenu (Aa), ReaderNavigator
+│   │                         (contents + bookmarks), WordLookupPanel (card / sheet / side panel), GoToPageDialog
 │   ├── vocabulary/           WordCard, AddWordDialog, EditWordDialog, SenseList, ImportDialog
 │   └── practice/             PracticeSetup, QuestionCard, ResultScreen
 ├── context/ToastContext.js   The only React context (app-wide action feedback)
 ├── hooks/                    useBooks, useVocabulary, useReadingProgress, useWordSelection, useWordLookup,
-│                             useToast, useMediaQuery, useDebouncedValue, useObjectUrl, useVisualViewport
+│                             useToast, useMediaQuery, useDebouncedValue, useObjectUrl, useVisualViewport,
+│                             useReaderPreferences, useReaderGestures
 ├── services/                 bookService, readingProgressService, vocabularyService, practiceService,
 │                             dictionaryService, backupService
 └── utils/                    indexedDB (DB access + StorageError), textSelection (PDF selection → word),
                               words (validation/normalisation), practice (quiz generation), backup (file
-                              format + merge plan), format (display helpers), popoverPosition (placement)
+                              format + merge plan), format (display helpers), popoverPosition (placement),
+                              readerPreferences, readerGestures (tap/swipe/pinch math), outline (PDF contents)
 
 tests/                        (repo root) Node unit tests for utils + dictionary service — `npm test`
 ```
@@ -88,18 +91,25 @@ tests/                        (repo root) Node unit tests for utils + dictionary
 | `vocabulary` | `id` | `wordKey` (unique), `createdAt` | `{ id, word, wordKey, phonetic, audio, pos, definition, example, origin, synonyms[], note, source: { bookId, bookTitle, page, sentence } \| null, createdAt, updatedAt }` |
 | `practiceStats` | `wordId` | — | `{ wordId, seen, correct, streak, lastPracticedAt }` |
 
-`localStorage` holds only `voca.lastExportAt` (backup reminder) and `voca.reader.scrollMode` (reader preference); `voca.chunkReloadAt` is in sessionStorage.
+`localStorage` holds only `voca.lastExportAt` (backup reminder) and `voca.reader.prefs` (reader display preferences: theme, mode, direction, zoom preset, pinch mode; the old `voca.reader.scrollMode` key is migrated); `voca.chunkReloadAt` is in sessionStorage.
 
-### Reader scroll modes
+### Reader layout (branch `feature/pdf-reader-redesign`)
 
-- Vertical (default) or horizontal, toggled in the reader toolbar; preference in `localStorage` (`voca.reader.scrollMode`).
-- Switching uses the viewer's own `switchScrollMode`, obtained through a tiny local plugin object (`scrollModeBridge` in `PDFReader.jsx`) — no extra package. The viewer keeps the zoom and scrolls back to the current page; page events are ignored for 700 ms during the switch.
+- **Fixed toolbar, always visible** (`ReaderToolbar.jsx`) — the user rejected hidden/auto-hiding controls and tap zones; don't reintroduce them. Desktop: back, title · previous / editable page number "of N" / next · zoom out / zoom drop-down (Fit width, Fit page, percentages) / zoom in · Contents, View settings (Aa), bookmark. Phones: back, title, Contents, Aa, bookmark on top, plus a fixed bottom bar (`ReaderBottomBar`) with previous / page (tap → Go to page) / next and zoom out / in.
+- Clicking or tapping the page does nothing except text selection.
+- **View settings (Aa)** (`DisplayMenu`, non-modal so changes preview live): page theme Paper/Sepia/Night, reading Scroll/Pages, direction Vertical/Horizontal; on phones also zoom presets + steps and pinch mode Sharp/Browser. Saved via `useReaderPreferences`.
+- **Themes** tint only the page canvas with CSS filters (`pdf-viewer-overrides.css`); the transparent text layer is untouched, so selection keeps working.
+- **Modes** map to the viewer's `ScrollMode` (Vertical / Horizontal / Page) via `switchScrollMode`, obtained through a tiny local plugin object (`viewerBridge` in `PDFReader.jsx`) — no extra package. The viewer keeps the zoom and scrolls back to the current page; page events are ignored for 700 ms during a switch.
+- **Gestures** (`useReaderGestures` + pure `utils/readerGestures.js`): touch swipes turn pages in Pages mode (never while text is selected or for slow drags); arrow / Page keys turn pages in Pages mode; no tap handling is wired up. One-finger sideways moves at a scroll edge are `preventDefault`ed so Chrome's swipe-back doesn't close the book.
+- **Sharp pinch** (touch, `pinch: "sharp"`): the page area gets `touch-action: pan-x pan-y` (no browser zoom), the gesture shows a CSS-transform preview, then `zoomTo()` re-renders the PDF at the new scale and the scroll is corrected around the pinch point. `pinch: "browser"` restores the old browser zoom (fallback). Ctrl/⌘+wheel zooms the same way on desktop.
+- **Word lookup**: compact card next to the word (Save / More); More → bottom sheet on phones, 400 px side panel on desktop (the page area shrinks so the text isn't covered).
+- **Contents**: `doc.getOutline()` → `utils/outline.js` flattens and resolves destinations to pages; PDFs without an outline show a friendly empty state.
 - Horizontal mode uses CSS `scroll-snap-type: x proximity` with `scroll-snap-align: start`. **Keep `start`:** the viewer aligns a page's left edge when navigating; `center` broke go-to-page/previous on wide screens.
 
 ### Popover positioning and pinch-zoom
 
 - Pinch-zoom on phones/trackpads zooms the *visual* viewport only. All panel positioning uses `useVisualViewport()` (`window.visualViewport`) plus the pure `utils/popoverPosition.js#placePopover()` (unit-tested), in layout-viewport px.
-- Phones at normal zoom: bottom sheet anchored to the visible bottom (also above the iOS keyboard). Desktop, or any screen while pinch-zoomed: popover next to the word, counter-scaled with `transform: scale(1/scale)` so it keeps its normal size; it never covers the word and stays inside the visible area.
+- The compact card is placed next to the word on every device, counter-scaled with `transform: scale(1/scale)` when the browser is pinch-zoomed so it keeps its normal size; it never covers the word and stays inside the visible area. The expanded phone sheet is anchored to the visible bottom (also above the iOS keyboard).
 
 ### How word selection works
 

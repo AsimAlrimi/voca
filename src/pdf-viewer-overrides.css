@@ -1,17 +1,35 @@
-/* react-pdf-viewer — theme overrides using the tokens in index.css */
+/* react-pdf-viewer — reader styling, using the tokens in index.css */
 
 .rpv-core__viewer { height: 100% !important; }
 .rpv-core__viewer--dark {
-  --rpv-core__inner-page-background-color: var(--color-background);
-  --rpv-core__doc-loading-background-color: var(--color-background);
-  --rpv-core__doc-error-background-color: var(--color-background);
+  --rpv-core__inner-page-background-color: var(--reader-surround);
+  --rpv-core__doc-loading-background-color: var(--reader-surround);
+  --rpv-core__doc-error-background-color: var(--reader-surround);
 }
 
+.rpv-core__inner-page-container--single { overscroll-behavior: none; }
 .rpv-core__inner-pages {
-  background: var(--color-background) !important;
-  overscroll-behavior: contain;
+  background: var(--reader-surround) !important;
+  overscroll-behavior: none; /* no bounce-through, no browser back-swipe from the reader */
   -webkit-overflow-scrolling: touch;
 }
+
+/* ── Page themes ───────────────────────────────────────────────────────────
+   Only the rendered page image (canvas) is tinted. The text layer is transparent and
+   untouched, so text selection, word lookup and the selection highlight keep working. */
+.reader-root { --reader-surround: #141414; background: var(--reader-surround); }
+.reader-theme-paper { --reader-surround: #2a2a2a; }
+.reader-theme-sepia { --reader-surround: #241d15; }
+.reader-theme-night { --reader-surround: #050505; }
+
+.reader-theme-sepia .rpv-core__canvas-layer canvas {
+  filter: sepia(0.55) saturate(1.15) brightness(0.95) contrast(0.92);
+}
+.reader-theme-night .rpv-core__canvas-layer canvas {
+  /* Dark page, light text; hue-rotate keeps colours in images roughly recognisable. */
+  filter: invert(0.88) hue-rotate(180deg) brightness(1.05) contrast(0.9);
+}
+.reader-theme-night .rpv-core__page-layer::after { box-shadow: none !important; }
 
 /* Horizontal reading: swipe left/right; settle on a page when the swipe ends near one.
    "proximity" (not "mandatory") so panning inside a zoomed-in page is never fought. */
@@ -22,13 +40,8 @@
   scroll-snap-align: start; /* matches the viewer, which aligns a page's left edge when navigating */
 }
 
-/* Room so the last page isn't hidden behind the floating mobile controls */
-@media (max-width: 767px) {
-  .rpv-core__inner-pages { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
-}
-
 /* Page placeholder before the canvas renders */
-.rpv-core__page-layer::after { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5) !important; }
+.rpv-core__page-layer::after { box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45) !important; }
 
 /* Text selection in the (transparent) PDF.js text layer */
 .rpv-core__text-layer { opacity: 0.3 !important; }
@@ -47,7 +60,9 @@
 }
 .rpv-core__primary-button { border-radius: 8px; }
 
-/* Scrollbar */
-.rpv-core__inner-pages::-webkit-scrollbar       { width: 8px; height: 8px; }
-.rpv-core__inner-pages::-webkit-scrollbar-track { background: var(--color-background); }
-.rpv-core__inner-pages::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 4px; }
+/* Scrollbars: thin and quiet */
+.rpv-core__inner-pages::-webkit-scrollbar,
+.rpv-core__inner-page-container--single::-webkit-scrollbar { width: 6px; height: 6px; }
+.rpv-core__inner-pages::-webkit-scrollbar-track { background: transparent; }
+.rpv-core__inner-pages::-webkit-scrollbar-thumb,
+.rpv-core__inner-page-container--single::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }

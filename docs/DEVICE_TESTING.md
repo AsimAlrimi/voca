@@ -55,6 +55,24 @@ If step 3 fails (no highlight at all), note the phone model, OS version, browser
 
 If steps 3 works but 4 fails (highlight, but no sheet), note it. That is a Voca bug in selection detection.
 
+## 2c. Reader redesign (branch `feature/pdf-reader-redesign`)
+
+| # | Step | Expected | Pass? |
+| --- | --- | --- | --- |
+| 1 | Open a book | Top bar and bottom bar stay visible the whole time | |
+| 2 | Tap the page | Nothing changes (no hidden controls) | |
+| 3 | Bottom bar: arrows, tap the page number, − / + | Page turns, Go to page opens, zoom changes | |
+| 4 | Aa → Sepia, then Night | Page colours change; long-press still selects words | |
+| 5 | Aa → Pages | One page per screen; swipe left/right or use the arrows to turn pages | |
+| 6 | In Pages mode, long-press and adjust a word selection | The page does **not** turn | |
+| 7 | Pinch with two fingers (Aa → Pinch zoom: Sharp) | Page grows smoothly, then becomes sharp; text still selectable; pan with one finger | |
+| 8 | Same with Pinch zoom: Browser | Old behaviour (Safari zooms the whole screen) | |
+| 9 | Long-press a word | Small card next to the word: word, phonetic, first meaning, Save, More | |
+| 10 | Tap More | Full sheet with all meanings; pick one; Save | |
+| 11 | ☰ (Contents) | Chapters (if the PDF has them) and Bookmarks tabs; tapping one jumps there | |
+| 12 | Close and reopen the book | Theme, mode and page are restored | |
+| 13 | Swipe right on the first page / left edge | Stays in the book (doesn't go back to the Library) | |
+
 ## 2b. Scroll modes and pinch-zoom (added 2026-11-08)
 
 | # | Step | Expected | Pass? |

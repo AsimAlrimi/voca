@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToastContext } from "../../context/ToastContext";
 import Icon from "./Icon";
+import { createId } from "../../utils/id";
 
 const ICONS = { success: "check", error: "alert", info: "info" };
 const COLORS = {
@@ -21,7 +22,7 @@ export default function ToastProvider({ children }) {
 
   const show = useCallback(
     (message, { type = "info", duration = 3500, action } = {}) => {
-      const id = crypto.randomUUID();
+      const id = createId();
       setToasts((list) => [...list.slice(-2), { id, message, type, action }]);
       timers.current.set(id, setTimeout(() => dismiss(id), duration));
       return id;
